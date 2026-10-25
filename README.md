@@ -238,6 +238,26 @@ Find `.ply` in `output/test01/training/ply/` (the script prints paths when expor
 | GPU out of memory | Increase `--factor` (e.g. 4 to 8) or use smaller input photos |
 | No PLY generated | Trainer logs, `--save_ply` / `--ply_steps` options for your gsplat revision |
 
+## Future: portable capture station with remote CUDA training
+
+A portable Raspberry Pi camera rig can **capture and upload images** while a separate desktop/workstation performs GPU training. No GPU is needed on the Pi for capture. This is a *future architecture idea*, not an implemented remote execution feature.
+
+```text
+[Pi + USB cameras] --(SSH/SFTP or rsync over SSH)--> [Ubuntu CUDA workstation]
+    local JPEGs                                      PyCOLMAP -> gsplat -> scene.ply
+[Pi / laptop]  <--(SSH/SFTP or rsync over SSH)------ [generated splat]
+```
+
+Suggested progression:
+
+1. Get the current `run.py` pipeline working locally on your CUDA-equipped machine first.
+2. Optionally install **Ubuntu** on that machine (or WSL2) for fewer native-Windows build issues.
+3. Put the Pi and workstation on the same local network and enable **SSH server on the workstation**. Authenticate with SSH keys, restrict access, and avoid exposing SSH directly to the public internet.
+4. Transfer a capture folder (for example with `scp`, `sftp` or `rsync` on systems where it is available).
+5. Use SSH to run `python run.py --images ... --output ...` **on the workstation**, then copy the exported Gaussian `.ply` back to the Pi/laptop. For access away from home, consider a secure private VPN/overlay such as Tailscale rather than public port forwarding.
+
+This is **remote execution**, not GPU computation on the Pi. Training speed still depends on workstation hardware, and transfer time depends on network/upload speed. A future script could automate queueing, logging, and returning completed splats; for now, no networking or remote execution functionality is added to this repository.
+
 ## Later
 
 Future experiments: saved camera intrinsics and image calibration import (not implemented yet); pre-calibrated fixed multi-webcam rig extrinsics; alternative sparse-geometry initialisation; intentional Gaussian artefacts and artistic parameters. **These are not part of this first MVP.**
