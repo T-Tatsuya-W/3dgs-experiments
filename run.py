@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Minimal orchestration: photographs -> COLMAP SfM -> gsplat PLY.
 
-COLMAP and the upstream gsplat example are executed as subprocesses. This
+PyCOLMAP reconstructs camera poses in-process; the upstream gsplat example\nis launched as a subprocess. This
 repository deliberately does not vendor or reimplement either project.
 """
 from __future__ import annotations
@@ -29,10 +29,12 @@ def check_images(images: Path) -> None:
     print(f"Found {count} image(s) in {images}.", flush=True)
 
 
-def reconstruct(images: Path, dataset: Path, *, colmap: str) -> None:
+def reconstruct(images: Path, dataset: Path) -> None:
     """Create a conventional COLMAP dataset: images/, sparse/0/, database.db."""
-    if not shutil.which(colmap) and not Path(colmap).is_file():
-        raise RuntimeError(f"COLMAP executable not found: {colmap}")
+    try:
+        import pycolmap
+    except ImportError as exc:
+        raise RuntimeError("PyCOLMAP is missing. Install it with: python -m pip install pycolmap") from exc
 
     destination = dataset / "images"
     database = dataset / "database.db"
@@ -53,15 +55,34 @@ def reconstruct(images: Path, dataset: Path, *, colmap: str) -> None:
             "mixing reconstructions (or pass --skip-colmap to use existing poses)."
         )
 
-    run_command([colmap, "feature_extractor",
-                 "--database_path", str(database),
-                 "--image_path", str(destination),
-                 "--ImageReader.single_camera", "1",
-                 "--ImageReader.camera_model", "SIMPLE_RADIAL"])
-    run_command([colmap, "exhaustive_matcher", "--database_path", str(database)])
-    run_command([colmap, "mapper", "--database_path", str(database),
-                 "--image_path", str(destination),
-                 "--output_path", str(sparse)])
+    print("Extracting features with PyCOLMAP (CPU)...", flush=True)
+    reader = pycolmap.ImageReaderOptions()
+    reader.camera_model = "SIMPLE_RADIAL"
+    pycolmap.extract_features(
+        database_path=database,
+        image_path=destination,
+        camera_mode=pycolmap.CameraMode.SINGLE,
+        reader_options=reader,
+        device=pycolmap.Device.cpu,
+    )
+    print("Matching image features with PyCOLMAP (CPU)...", flush=True)
+    pycolmap.match_exhaustive(database_path=database, device=pycolmap.Device.cpu)
+    print("Estimating camera poses with PyCOLMAP...", flush=True)
+    reconstructions = pycolmap.incremental_mapping(
+        database_path=database,
+        image_path=destination,
+        output_path=sparse,
+    )
+    if not reconstructions:
+        raise RuntimeError("PyCOLMAP returned no reconstruction. Try more overlapping, textured photos.")
+
+    # gsplat expects a conventional sparse/0/ COLMAP model. Keep the largest
+    # reconstructed model, regardless of which numeric ID PyCOLMAP assigned.
+    best = max(reconstructions.values(), key=lambda r: r.num_reg_images())
+    model = sparse / "0"
+    model.mkdir(parents=True, exist_ok=True)
+    best.write(model)
+    print(f"Registered {best.num_reg_images()} images.", flush=True)
 
     model = sparse / "0"
     if not model.is_dir() or not (model / "cameras.bin").exists() and not (model / "cameras.txt").exists():
@@ -109,7 +130,6 @@ def main() -> int:
     parser.add_argument("--images", type=Path, default=Path("data/test01/images"))
     parser.add_argument("--output", type=Path, default=Path("output/test01"))
     parser.add_argument("--gsplat-examples", type=Path, default=Path("third_party/gsplat/examples"))
-    parser.add_argument("--colmap", default="colmap")
     parser.add_argument("--steps", type=int, default=3000)
     parser.add_argument("--factor", type=int, default=4, help="Training image downsample factor")
     parser.add_argument("--skip-colmap", action="store_true", help="Reuse output/COLMAP data")
@@ -126,7 +146,7 @@ def main() -> int:
     try:
         if not args.skip_colmap:
             check_images(images)
-            reconstruct(images, dataset, colmap=args.colmap)
+            reconstruct(images, dataset)
         if not args.colmap_only:
             train(dataset, output / "training", gsplat_examples=examples,
                   steps=args.steps, factor=args.factor)
