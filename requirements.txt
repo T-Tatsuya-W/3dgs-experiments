@@ -1,0 +1,2 @@
+# Camera pose estimation and feature matching (CPU wheels on supported platforms)
+pycolmap>=3.10,<5
