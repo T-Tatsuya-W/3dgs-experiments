@@ -57,9 +57,10 @@ READER = r'''
         suffix = f"_{factor}" if factor > 1 and not self.extconf["no_factor_suffix"] else ""
         colmap_image_dir = os.path.join(data_dir, "images")
         image_dir = os.path.join(data_dir, "images" + suffix)
-        for directory in [image_dir, colmap_image_dir]:
-            if not os.path.exists(directory):
-                raise ValueError(f"Image folder {directory} does not exist.")
+        if not os.path.exists(colmap_image_dir):
+            raise ValueError(f"Image folder {colmap_image_dir} does not exist.")
+        if factor > 1 and not os.path.exists(image_dir):
+            image_dir = _resize_image_folder(colmap_image_dir, image_dir, factor=factor)
         colmap_files = sorted(_get_rel_paths(colmap_image_dir))
         image_files = sorted(_get_rel_paths(image_dir))
         if factor > 1 and image_files and os.path.splitext(image_files[0])[1].lower() == ".jpg":
@@ -102,7 +103,11 @@ def main():
         dataset.write_text(source, encoding="utf-8")
     source = trainer.read_text(encoding="utf-8")
     original = "from fused_ssim import fused_ssim"
-    replacement = "from pytorch_msssim import ssim as fused_ssim"
+    replacement = """from pytorch_msssim import ssim as _pure_ssim
+
+def fused_ssim(x, y, padding="valid"):
+    # Upstream uses images in [0,1]; pure torch fallback avoids compiling fused_ssim.
+    return _pure_ssim(x, y, data_range=1.0, size_average=True)"""
     if original in source:
         trainer.write_text(source.replace(original, replacement), encoding="utf-8")
     elif replacement not in source:
