@@ -48,7 +48,75 @@ python -c "import pycolmap; print('PyCOLMAP', pycolmap.__version__)"
 
 **No standalone `colmap` executable is necessary.** If PyCOLMAP has no compatible wheel for your Python/platform, switch to a supported Python version rather than trying to build from source as the first option.
 
-### CUDA/PyTorch and gsplat training — both environments
+### Alternative: precompiled gsplat wheel (avoid local C++/CUDA compilation)
+
+If you only want to **use** gsplat, prefer a compatible prebuilt wheel rather than `pip install -e .`, which compiles code from source. Official wheel index:
+
+- [Browse available gsplat binaries](https://docs.gsplat.studio/whl/gsplat/)
+- [Official PyTorch previous versions](https://docs.pytorch.org/get-started/previous-versions/)
+
+**Suggested experimental target (x86-64 Windows or x86-64 Linux, not Raspberry Pi):**
+
+| Component | Target |
+| --- | --- |
+| Python | **3.10**, 64-bit |
+| PyTorch | **2.4.1** |
+| torchvision / torchaudio | **0.19.1 / 2.4.1** |
+| PyTorch CUDA runtime | **12.4** (`cu124`) |
+| gsplat binary | **1.5.3** with `pt24cu124` and `cp310` |
+| Platform | `win_amd64` (Windows) or `linux_x86_64` (Linux) |
+
+These exact platform wheels are listed in the official gsplat wheel index. **Check your NVIDIA GPU supports CUDA 12.4 before adopting this older environment.** This is a *binary-availability target*, not a guarantee that the newest upstream `simple_trainer.py` and its latest example dependencies work with gsplat 1.5.3. Keep the environment separate from any current CUDA 13/PyTorch 2.9 environment. The local CUDA 13.4 toolkit does not need to match this runtime just to use the prebuilt wheel.
+
+**PowerShell (Windows):**
+
+```powershell
+py -3.10 -m venv .venv-wheel
+.\.venv-wheel\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu124
+python -m pip install -r requirements.txt
+```
+
+**Bash (Ubuntu; install Python 3.10 first if absent):**
+
+```bash
+python3.10 -m venv .venv-wheel
+source .venv-wheel/bin/activate
+python -m pip install --upgrade pip
+python -m pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu124
+python -m pip install -r requirements.txt
+```
+
+Then **download the exact platform wheel** using the [gsplat wheel index](https://docs.gsplat.studio/whl/gsplat/):
+
+- Windows: `gsplat-1.5.3+pt24cu124-cp310-cp310-win_amd64.whl`
+- Linux: `gsplat-1.5.3+pt24cu124-cp310-cp310-linux_x86_64.whl`
+
+Install it from the download directory with a quoted filename (replace the filename for Linux):
+
+```bash
+python -m pip install "./gsplat-1.5.3+pt24cu124-cp310-cp310-win_amd64.whl"
+```
+
+Verify the environment:
+
+```bash
+python -c "import sys, torch, gsplat; print(sys.version); print(torch.__version__, torch.version.cuda, torch.cuda.is_available()); print(gsplat.__version__)"
+```
+
+**Trainer compatibility matters:** This repository currently invokes `third_party/gsplat/examples/simple_trainer.py`, which is cloned separately and can change on `main`. The old 1.5.3 wheel might be incompatible with a new trainer (new APIs, import paths, or required torch >= 2.9). For a binary-based *end-to-end* run, use the corresponding gsplat `v1.5.3` source tag for its examples (do not install that source in editable mode), inspect its requirements, and expect to adapt the wrapper CLI flags to that tagged trainer if they differ. In `third_party/gsplat`:
+
+```bash
+git fetch --tags
+git checkout v1.5.3
+```
+
+Install compatible **example-only** dependencies carefully; don't blindly install an example requirements file that downgrades or overwrites the chosen PyTorch build. Our `run.py` is currently tested against neither that historical trainer nor the prebuilt wheel, so this is an **optional alternative to experiment with**, not yet the project's verified default.
+
+**Raspberry Pi 4B:** These wheels do **not** work on the Pi. They target x86-64 Windows/Linux, while the Pi is ARM-based and has no NVIDIA CUDA GPU. The Pi can still handle capture, photo transfer, and potentially PyCOLMAP on a supported ARM build, but not this standard gsplat CUDA training. Plan to run Gaussian training on a CUDA-equipped PC.
+
+### Source installation: CUDA/PyTorch and gsplat training — both environments
 
 If you only want to check camera reconstruction, skip this section and use `--colmap-only`.
 
@@ -169,6 +237,26 @@ Find `.ply` in `output/test01/training/ply/` (the script prints paths when expor
 | gsplat import/compilation error | Compatible Python, PyTorch, toolkit/compiler and upstream example requirements |
 | GPU out of memory | Increase `--factor` (e.g. 4 to 8) or use smaller input photos |
 | No PLY generated | Trainer logs, `--save_ply` / `--ply_steps` options for your gsplat revision |
+
+## Future: portable capture station with remote CUDA training
+
+A portable Raspberry Pi camera rig can **capture and upload images** while a separate desktop/workstation performs GPU training. No GPU is needed on the Pi for capture. This is a *future architecture idea*, not an implemented remote execution feature.
+
+```text
+[Pi + USB cameras] --(SSH/SFTP or rsync over SSH)--> [Ubuntu CUDA workstation]
+    local JPEGs                                      PyCOLMAP -> gsplat -> scene.ply
+[Pi / laptop]  <--(SSH/SFTP or rsync over SSH)------ [generated splat]
+```
+
+Suggested progression:
+
+1. Get the current `run.py` pipeline working locally on your CUDA-equipped machine first.
+2. Optionally install **Ubuntu** on that machine (or WSL2) for fewer native-Windows build issues.
+3. Put the Pi and workstation on the same local network and enable **SSH server on the workstation**. Authenticate with SSH keys, restrict access, and avoid exposing SSH directly to the public internet.
+4. Transfer a capture folder (for example with `scp`, `sftp` or `rsync` on systems where it is available).
+5. Use SSH to run `python run.py --images ... --output ...` **on the workstation**, then copy the exported Gaussian `.ply` back to the Pi/laptop. For access away from home, consider a secure private VPN/overlay such as Tailscale rather than public port forwarding.
+
+This is **remote execution**, not GPU computation on the Pi. Training speed still depends on workstation hardware, and transfer time depends on network/upload speed. A future script could automate queueing, logging, and returning completed splats; for now, no networking or remote execution functionality is added to this repository.
 
 ## Later
 
