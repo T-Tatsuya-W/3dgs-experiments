@@ -1,2 +1,3 @@
-# Camera pose estimation and feature matching (CPU wheels on supported platforms)
-pycolmap>=3.10,<5
+# Reproducible camera reconstruction and compatibility with gsplat v1.5.3 example patch.
+pycolmap==4.2.1
+numpy<2

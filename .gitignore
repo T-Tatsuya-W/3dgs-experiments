@@ -1,5 +1,6 @@
 # Local Python environments
 .venv/
+.venv-wheel/
 venv/
 __pycache__/
 *.py[cod]
