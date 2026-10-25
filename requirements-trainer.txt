@@ -1,0 +1,17 @@
+# gsplat v1.5.3 example-only imports. Do not install upstream examples/requirements.txt.
+imageio[ffmpeg]
+scikit-learn
+tqdm
+torchmetrics[image]
+opencv-python
+tyro>=0.8.8
+Pillow
+tensorboard
+tensorly
+pyyaml
+matplotlib
+viser
+splines
+pytorch-msssim
+# Upstream example viewer imports; pinned source revision from gsplat v1.5.3 requirements.
+git+https://github.com/nerfstudio-project/nerfview@4538024fe0d15fd1a0e4d760f3695fc44ca72787
