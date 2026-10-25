@@ -97,3 +97,8 @@ Look for a `.ply` under `output/test01/training/`; open in [SuperSplat](https://
 ### Design
 
 The project keeps the training implementation upstream (`third_party/gsplat` is ignored by Git), the **compatibility patch in `scripts/`**, and orchestration in `run.py`. The Raspberry Pi can eventually capture/transfer photographs to an NVIDIA PC for training, but cannot run this CUDA wheel. Fixed multi-camera calibration and remote capture are future projects.
+
+
+## Calibrated capture experiments
+
+After calibrating your camera using [CALIBRATION.md](CALIBRATION.md), see [workflows/README.md](workflows/README.md) for two separate experiments: **known intrinsics with unknown camera poses** and **known intrinsics plus a manually measured relative camera pose**. The two-view OpenCV path currently outputs a coloured point cloud, **not yet a Gaussian PLY**.
