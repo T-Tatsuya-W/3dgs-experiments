@@ -1,0 +1,25 @@
+# Local Python environments
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Camera data and generated reconstructions
+data/*
+!data/.gitkeep
+output/
+results/
+*.log
+
+# External upstream repositories and local checkpoints
+third_party/
+*.ckpt
+*.pt
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
