@@ -17,7 +17,7 @@ READER = r'''
         for im in registered:
             cam = reconstruction.cameras[im.camera_id]
             w2c = np.eye(4)
-            w2c[:3, :] = im.cam_from_world.matrix()
+            w2c[:3, :] = im.cam_from_world().matrix()
             camtoworlds_list.append(np.linalg.inv(w2c))
             camera_ids.append(im.camera_id)
             image_names.append(im.name)
