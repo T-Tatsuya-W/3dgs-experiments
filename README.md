@@ -1,46 +1,33 @@
 # 3DGS Experiments
 
-A small Python-driven workflow for **photographs → COLMAP camera poses → gsplat Gaussian PLY**. No Nerfstudio application required. First goal: photograph a stationary scene with one camera (e.g. Olympus PEN E-P2), then open the resulting splat in [SuperSplat](https://superspl.at/editor/).
+A small Python-driven workflow for **photographs → PyCOLMAP camera poses → gsplat Gaussian PLY**. No Nerfstudio application required. First goal: photograph a stationary scene with one camera (e.g. Olympus PEN E-P2), then open the resulting splat in [SuperSplat](https://superspl.at/editor/).
 
-**Status:** Initial untested scaffold. The project wraps two external tools; it does not implement Gaussian optimisation from scratch. The standard gsplat example trainer requires an NVIDIA CUDA GPU.
+**Status:** Initial untested scaffold. The project uses PyCOLMAP in Python and an upstream gsplat example trainer; it does not implement Gaussian optimisation from scratch. The standard gsplat example trainer requires an NVIDIA CUDA GPU.
 
 ## Supported environments
 
-The Python wrapper (`run.py`) is written with standard-library, cross-platform APIs and can run on **Ubuntu or Windows**. You still need two external components:
+The reconstruction stage now uses **[PyCOLMAP](https://colmap.github.io/pycolmap/)** directly rather than the separate COLMAP desktop/CLI installation. It supports Windows and Ubuntu through Python wheels (for supported Python/platform versions). Feature extraction and matching run on CPU by default; reconstruction does not require NVIDIA hardware.
 
-1. **COLMAP** for camera poses: supported on both Windows and Ubuntu, including CPU-based feature extraction/matching.
-2. **gsplat's upstream example trainer** for splat optimisation/export: standard training needs an **NVIDIA CUDA-compatible GPU**, an appropriate PyTorch build and other example dependencies. Windows-native setup may require Visual Studio C++ Build Tools, a CUDA toolkit and extension compilation. **WSL2 Ubuntu is the recommended Windows training path**, not a guarantee that every gsplat revision runs natively.
+**Important:** The *gsplat training* stage is separate and still normally needs an NVIDIA CUDA GPU. If you use Windows for training, **WSL2 Ubuntu is recommended** over native Windows due to PyTorch/CUDA extension build requirements. You may run `--colmap-only` on a non-NVIDIA computer.
 
-You can run `--colmap-only` without installing gsplat or an NVIDIA GPU. A Raspberry Pi 4B is not a practical target for the CUDA training stage.
-
-### Option A: Ubuntu Linux (or Ubuntu inside WSL2)
-
-Ubuntu terminal:
+### Ubuntu Linux / WSL2 Ubuntu
 
 ```bash
 sudo apt update
-sudo apt install -y git python3 python3-venv python3-pip build-essential colmap
+sudo apt install -y git python3-venv python3-pip build-essential
 git clone https://github.com/T-Tatsuya-W/3dgs-experiments.git
 cd 3dgs-experiments
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip setuptools wheel
-colmap -h
+python -m pip install -r requirements.txt
 ```
 
-When running inside **WSL2 on Windows**, first install WSL from an **administrator PowerShell** on the Windows host:
+For Windows with WSL2, install Ubuntu from an administrator PowerShell with `wsl --install -d Ubuntu`, then use the Ubuntu steps above inside that distribution. WSL2 GPU training additionally needs a compatible Windows NVIDIA driver and CUDA-enabled PyTorch.
 
-```powershell
-wsl --install -d Ubuntu
-```
+### Native Windows PowerShell
 
-Restart if prompted, open the Ubuntu distribution, then run the Ubuntu commands above. Install/update a suitable **Windows NVIDIA driver** for WSL CUDA support; do not try to install a separate Linux display driver inside WSL. Confirm `nvidia-smi` works from WSL and PyTorch detects CUDA before training. If `colmap` has missing GUI/display libraries in your headless environment, consult [COLMAP installation](https://colmap.github.io/install.html).
-
-### Option B: Native Windows (PowerShell)
-
-COLMAP's **Windows distribution** is available via its [official releases/install docs](https://colmap.github.io/install.html). Download/extract it, locate `COLMAP.bat` or `colmap.exe` (depending on distribution), and verify that its command-line executable runs. Either add its directory to `PATH` or pass the executable path via `--colmap` (quote paths containing spaces).
-
-Install **Git for Windows**, **Python for Windows** (with `py` launcher), and (if training) a compatible NVIDIA GPU driver plus the compiler/CUDA prerequisites for your gsplat revision.
+Install Python (including the `py` launcher) and Git for Windows, then:
 
 ```powershell
 git clone https://github.com/T-Tatsuya-W/3dgs-experiments.git
@@ -48,23 +35,18 @@ cd 3dgs-experiments
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip setuptools wheel
-colmap -h
+python -m pip install -r requirements.txt
 ```
 
-If PowerShell blocks activating the venv, you can instead run Python explicitly with `.\.venv\Scripts\python.exe`, or set the **current process only** to allow activation:
+If PowerShell blocks virtual environment activation, use `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` followed by the activation command, or invoke `.\.venv\Scripts\python.exe` directly.
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-.\.venv\Scripts\Activate.ps1
+### Confirm PyCOLMAP works (either OS)
+
+```bash
+python -c "import pycolmap; print('PyCOLMAP', pycolmap.__version__)"
 ```
 
-If `colmap` is not on `PATH`, use a fully qualified path in the run command:
-
-```powershell
-python run.py --colmap "C:\path\to\COLMAP\COLMAP.bat" --colmap-only
-```
-
-**Note:** Some Windows COLMAP bundles use a `.bat` launcher. Python's subprocess handling of batch files differs from native executables; if that path fails, prefer invoking the actual `colmap.exe`, adding its directory to `PATH`, or running the project under WSL2. Check `colmap -h` independently first.
+**No standalone `colmap` executable is necessary.** If PyCOLMAP has no compatible wheel for your Python/platform, switch to a supported Python version rather than trying to build from source as the first option.
 
 ### CUDA/PyTorch and gsplat training — both environments
 
@@ -108,7 +90,7 @@ cd ../..
 
 ## Photographs
 
-For the **first test**, take around **20–50 sharp, overlapping JPEG photos** of a *stationary, textured* subject, from genuinely different camera positions. Keep zoom/focal length, focus, exposure and white balance as constant as practical. Do not just rotate the camera in place. Calibration can come later: COLMAP initially estimates shared intrinsics for a single camera.
+For the **first test**, take around **20–50 sharp, overlapping JPEG photos** of a *stationary, textured* subject, from genuinely different camera positions. Keep zoom/focal length, focus, exposure and white balance as constant as practical. Do not just rotate the camera in place. Calibration can come later: PyCOLMAP currently estimates shared intrinsics for a single camera.
 
 Copy them into:
 
@@ -157,9 +139,9 @@ New-Item -ItemType Directory -Force data/test01/images | Out-Null
 python run.py --images data/test01/images --output output/test01
 ```
 
-For a first smoke test without any training dependencies, run `python run.py --colmap-only` after putting photographs in the input directory. After successful COLMAP poses, `python run.py --skip-colmap --output output/test01` runs the trainer separately.
+For a first smoke test without CUDA or gsplat, run `python run.py --colmap-only` after adding photographs. After successful poses, `python run.py --skip-colmap --output output/test01` runs the trainer separately.
 
-The script validates/copies photos, runs COLMAP `feature_extractor`, `exhaustive_matcher` and `mapper` using a shared `SIMPLE_RADIAL` camera model, then calls the upstream gsplat `simple_trainer.py` with 3,000 steps / downsample factor 4 / a requested Gaussian PLY export.
+The script validates/copies photos, calls PyCOLMAP's `extract_features`, `match_exhaustive` and `incremental_mapping` using a shared `SIMPLE_RADIAL` camera model, then calls the upstream gsplat `simple_trainer.py` with 3,000 steps / downsample factor 4 / a requested Gaussian PLY export.
 
 **Commands shared across platforms:**
 
@@ -182,7 +164,7 @@ Find `.ply` in `output/test01/training/ply/` (the script prints paths when expor
 | Problem | What to check |
 | --- | --- |
 | No COLMAP sparse reconstruction | Sharp textured subject, 20–50 images, substantial overlap and actual camera translation |
-| `colmap` not found | Install the COLMAP CLI / check your PATH |
+| `ModuleNotFoundError: pycolmap` | Activate your environment and run `python -m pip install -r requirements.txt` |
 | CUDA unavailable | NVIDIA driver, CUDA-enabled PyTorch build, and (on Windows) WSL2 GPU passthrough where relevant |\n| PowerShell won't activate venv | Use `Set-ExecutionPolicy -Scope Process Bypass`, or call the venv's `python.exe` directly |\n| Native Windows gsplat build fails | Check MSVC/CUDA/PyTorch compatibility; WSL2 Ubuntu is the recommended fallback |
 | gsplat import/compilation error | Compatible Python, PyTorch, toolkit/compiler and upstream example requirements |
 | GPU out of memory | Increase `--factor` (e.g. 4 to 8) or use smaller input photos |
@@ -190,4 +172,4 @@ Find `.ply` in `output/test01/training/ply/` (the script prints paths when expor
 
 ## Later
 
-Future experiments: saved camera intrinsics; pre-calibrated fixed multi-webcam rig extrinsics; alternative sparse-geometry initialisation; intentional Gaussian artefacts and artistic parameters. **These are not part of this first MVP.**
+Future experiments: saved camera intrinsics and image calibration import (not implemented yet); pre-calibrated fixed multi-webcam rig extrinsics; alternative sparse-geometry initialisation; intentional Gaussian artefacts and artistic parameters. **These are not part of this first MVP.**
