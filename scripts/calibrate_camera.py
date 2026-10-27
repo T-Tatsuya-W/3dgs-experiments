@@ -19,12 +19,12 @@ DPI = 300
 DICT_NAME = "DICT_4X4_50"
 
 
-def board_spec():
+def board_spec(square_mm=SQUARE_MM, marker_mm=MARKER_MM):
     if not hasattr(cv2, "aruco") or not hasattr(cv2.aruco, "CharucoBoard"):
         raise RuntimeError("OpenCV ArUco/ChArUco unavailable. Install opencv-contrib-python.")
     dictionary = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, DICT_NAME))
     board = cv2.aruco.CharucoBoard(
-        (SQUARES_X, SQUARES_Y), SQUARE_MM / 1000, MARKER_MM / 1000, dictionary
+        (SQUARES_X, SQUARES_Y), square_mm / 1000, marker_mm / 1000, dictionary
     )
     return board
 
@@ -49,8 +49,10 @@ def make_board(output):
     print("Measure several printed 30 mm squares to verify scale. Mount perfectly flat.")
 
 
-def calibrate(images, output, min_corners, min_views):
-    board = board_spec()
+def calibrate(images, output, min_corners, min_views, square_mm, marker_mm):
+    if not (0 < marker_mm < square_mm):
+        raise ValueError('Marker size must be positive and smaller than square size.')
+    board = board_spec(square_mm, marker_mm)
     detector = cv2.aruco.CharucoDetector(board)
     extensions = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp"}
     paths = sorted(p for p in images.iterdir() if p.is_file() and p.suffix.lower() in extensions)
@@ -99,7 +101,7 @@ def calibrate(images, output, min_corners, min_views):
         "mean_view_reprojection_error_px": float(np.mean(view_errors)),
         "board": {
             "dictionary": DICT_NAME, "squares_x": SQUARES_X, "squares_y": SQUARES_Y,
-            "square_mm": SQUARE_MM, "marker_mm": MARKER_MM
+            "square_mm": square_mm, "marker_mm": marker_mm
         },
         "used_images": accepted,
         "per_view_reprojection_error_px": dict(zip(accepted, view_errors)),
@@ -121,11 +123,17 @@ def main():
     cal.add_argument("--output", type=Path, default=Path("calibration/olympus_intrinsics.json"))
     cal.add_argument("--min-corners", type=int, default=8)
     cal.add_argument("--min-views", type=int, default=12)
+    cal.add_argument("--square-mm", type=float, default=25.5,
+                     help="Measured square width in mm (default: 25.5 for scaled print)")
+    cal.add_argument("--marker-mm", type=float, default=None,
+                     help="Measured marker width in mm; default: square-mm * 22/30")
     args = parser.parse_args()
     if args.command == "board":
         make_board(args.output)
     else:
-        calibrate(args.images, args.output, args.min_corners, args.min_views)
+        calibrate(args.images, args.output, args.min_corners, args.min_views,
+                  args.square_mm, args.marker_mm if args.marker_mm is not None
+                  else args.square_mm * (MARKER_MM / SQUARE_MM))
 
 
 if __name__ == "__main__":

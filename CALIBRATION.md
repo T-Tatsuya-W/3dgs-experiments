@@ -30,8 +30,12 @@ Put these in `data/calibration/images/`. The script doesn't require the photogra
 
 ## 3. Calibrate and inspect
 
+**If your original 30 mm board printed at 25.5 mm:** keep that same print; its 22 mm markers should measure **18.7 mm** (25.5 × 22 / 30). The calibration command now defaults to `--square-mm 25.5`, and derives marker width proportionally. You may pass `--square-mm 30` for a correctly printed original or `--marker-mm` to override if you measured it precisely. Only use these scaled dimensions with a **uniformly scaled print** (same horizontal/vertical scale); do not print a new board at one scale and calibrate using another.
+
+
+
 ```powershell
-python scripts/calibrate_camera.py calibrate --images data/calibration/images --output calibration/olympus_intrinsics.json
+python scripts/calibrate_camera.py calibrate --images data/calibration/images --output calibration/olympus_intrinsics.json --square-mm 25.5
 ```
 
 The script prints the detected corner count for each image, rejects insufficient detections, and writes:
@@ -50,3 +54,5 @@ Aim for diverse accepted viewpoints and low reprojection error, but **do not jud
 - Board not detected: verify the generated board, pattern version, sharpness and physical print.
 - Too few usable views: acquire more oblique images with the board in different frame positions.
 - Don't change focus or zoom after calibration without checking if the resulting intrinsics remain accurate.
+
+Take **20–30 varied photographs**, ideally leaving **at least 12 usable views** after corner-detection filtering. Tilt the target, vary its location across the full image and its distance; don't simply take 30 near-identical views. Stable lens/zoom/focus settings are essential.
