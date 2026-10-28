@@ -63,6 +63,7 @@ def main():
     p.add_argument("--min-disparity", type=int, default=0)
     p.add_argument("--num-disparities", type=int, default=128)
     p.add_argument("--block-size", type=int, default=5)
+    p.add_argument("--max-width", type=int, default=1200, help="Resize for manageable stereo matching; intrinsics scaled too")
     args = p.parse_args()
     if args.num_disparities < 16 or args.num_disparities % 16:
         p.error("--num-disparities must be a positive multiple of 16")
@@ -74,9 +75,18 @@ def main():
         p.error("Could not read left/right photographs")
     if left.shape[:2] != right.shape[:2]:
         p.error("Images must have identical width and height for this first experiment")
-    h, w = left.shape[:2]
-    K1, D1 = load_calibration(args.calibration, (w, h))
-    K2, D2 = load_calibration(args.calibration_right or args.calibration, (w, h))
+    original_h, original_w = left.shape[:2]
+    K1, D1 = load_calibration(args.calibration, (original_w, original_h))
+    K2, D2 = load_calibration(args.calibration_right or args.calibration, (original_w, original_h))
+    scale = min(1.0, args.max_width / original_w)
+    if scale < 1.0:
+        w, h = round(original_w * scale), round(original_h * scale)
+        left = cv2.resize(left, (w, h), interpolation=cv2.INTER_AREA)
+        right = cv2.resize(right, (w, h), interpolation=cv2.INTER_AREA)
+        for K in (K1, K2):
+            K[:2, :] *= scale
+    else:
+        h, w = original_h, original_w
     pose = json.loads(args.pose.read_text(encoding="utf8"))
     C = np.asarray(pose["camera2_center_in_camera1_m"], dtype=np.float64)
     if C.shape != (3,) or np.linalg.norm(C) < 1e-6:
@@ -112,6 +122,16 @@ def main():
     disp_vis[~valid] = 0
     cv2.imwrite(str(args.output / "disparity.png"), disp_vis)
     save_cloud(args.output / "points.ply", cloud, cv2.cvtColor(a, cv2.COLOR_BGR2RGB))
+    cv2.imwrite(str(args.output / "left.png"), a)
+    cv2.imwrite(str(args.output / "right.png"), b)
+    np.savez_compressed(args.output / "stereo_data.npz",
+                        points=cloud.astype(np.float32), valid=valid,
+                        rgb=cv2.cvtColor(a, cv2.COLOR_BGR2RGB), disparity=disparity)
+    meta = {"P1": P1.tolist(), "P2": P2.tolist(),
+            "R_right_from_left": (R2 @ R @ R1.T).tolist(),
+            "t_right_from_left_m": (R2 @ T).tolist(),
+            "image_width": w, "image_height": h}
+    (args.output / "stereo_meta.json").write_text(json.dumps(meta, indent=2))
     print(f"Valid stereo depths: {int(valid.sum())}/{valid.size}. Wrote {args.output / 'points.ply'}")
     print("This is a regular point cloud, not a Gaussian splat; inspect disparity and geometry.")
 
