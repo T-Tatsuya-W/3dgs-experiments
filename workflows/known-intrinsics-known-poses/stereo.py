@@ -129,6 +129,7 @@ def main():
                         rgb=cv2.cvtColor(a, cv2.COLOR_BGR2RGB), disparity=disparity)
     meta = {"P1": P1.tolist(), "P2": P2.tolist(),
             "R_right_from_left": (R2 @ R @ R1.T).tolist(),
+            "R1_rectify": R1.tolist(),
             "t_right_from_left_m": (R2 @ T).tolist(),
             "image_width": w, "image_height": h}
     (args.output / "stereo_meta.json").write_text(json.dumps(meta, indent=2))
