@@ -1,0 +1,4 @@
+{
+  "camera2_center_in_camera1_m": [0.10, 0.0, 0.0],
+  "camera1_to_camera2_rotation_xyz_deg": [0.0, 0.0, 0.0]
+}
