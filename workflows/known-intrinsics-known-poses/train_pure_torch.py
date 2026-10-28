@@ -11,6 +11,7 @@ import math
 from pathlib import Path
 
 import numpy as np
+from plyfile import PlyData, PlyElement
 import torch
 import torch.nn.functional as F
 from PIL import Image
@@ -104,18 +105,18 @@ def export_ply(path, xyz, log_scales, colors, logits):
     scales = log_scales.detach().cpu().numpy()
     rgb = torch.sigmoid(colors).detach().cpu().numpy()
     op = logits.detach().cpu().numpy()
-    with path.open("w", encoding="ascii") as f:
-        n = len(xyz)
-        f.write("ply\nformat ascii 1.0\nelement vertex %d\n" % n)
-        for prop in ("x","y","z","nx","ny","nz","f_dc_0","f_dc_1","f_dc_2",
-                     "opacity","scale_0","scale_1","scale_2",
-                     "rot_0","rot_1","rot_2","rot_3"):
-            f.write("property float "+prop+"\n")
-        f.write("end_header\n")
-        for i in range(n):
-            row = [*xyz[i], 0, 0, 0, *((rgb[i]-0.5)/C0), op[i],
-                   *scales[i], 1, 0, 0, 0]
-            f.write(" ".join(f"{float(x):.8g}" for x in row)+"\n")
+    fields = ["x", "y", "z", "nx", "ny", "nz",
+              "f_dc_0", "f_dc_1", "f_dc_2", "opacity",
+              "scale_0", "scale_1", "scale_2",
+              "rot_0", "rot_1", "rot_2", "rot_3"]
+    vertices = np.empty(len(xyz), dtype=[(name, "<f4") for name in fields])
+    values = np.column_stack((
+        xyz, np.zeros_like(xyz), (rgb - 0.5) / C0, op[:, None],
+        scales, np.tile(np.array([1, 0, 0, 0], dtype=np.float32), (len(xyz), 1))
+    )).astype(np.float32)
+    for i, name in enumerate(fields):
+        vertices[name] = values[:, i]
+    PlyData([PlyElement.describe(vertices, "vertex")], text=False, byte_order="<").write(str(path))
 
 
 def main():
