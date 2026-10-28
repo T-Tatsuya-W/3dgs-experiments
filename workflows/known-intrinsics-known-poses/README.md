@@ -1,16 +1,16 @@
 # Two-photo stereo → experimental Gaussian splat
 
-**Status:** Implemented as an integration experiment, **not yet hardware-tested end-to-end**. This branch adds a real COLMAP-format dataset export and a two-view trainer split patch. Camera 1 is the world origin; camera 2 is assumed **10 cm to its right with exactly parallel orientation**. If your actual capture deviates from this, geometry may be incorrect.
+**Status:** Experimental and **not yet tested end-to-end on the Olympus photographs**. The stereo, COLMAP exporter and two-view trainer patch are present on `main`. This PR adds a one-command runner. Camera 1 is the world origin; camera 2 is assumed **10 cm to its right with exactly parallel orientation**. If your actual capture deviates from this, geometry may be incorrect.
 
 ## Capture and environment
 
 Use the calibrated Olympus with the same lens/focal length/focus/resolution as the saved intrinsics. Photograph a **stationary, textured scene** twice, moving the *optical centre* 10 cm right without rotation. Keep most of the scene in both frames. Camera optical centre is not necessarily the centre of the tripod screw!
 
-Open PowerShell at the repository root, use your working gsplat v1.5.3 / PyCOLMAP 4.2.1 `.venv`, and select this branch:
+Open PowerShell at the repository root after merging this PR; use your working gsplat v1.5.3 / PyCOLMAP 4.2.1 `.venv`:
 
 ```powershell
-git fetch origin
-git switch feat/two-photo-stereo-gsplat
+git switch main
+git pull origin main
 .\.venv\Scripts\Activate.ps1
 python -c "import cv2, gsplat, pycolmap, torch; print(cv2.__version__, gsplat.__version__, pycolmap.__version__, torch.cuda.is_available())"
 ```
@@ -20,6 +20,28 @@ Put photos in `data/stereo/left.jpg` and `data/stereo/right.jpg`; calibration JS
 ```powershell
 Copy-Item workflows/known-intrinsics-known-poses/pose.example.json workflows/known-intrinsics-known-poses/pose.json
 ```
+
+## Quick start: one command
+
+Place your two photographs at `data/stereo/left.jpg` (origin) and `data/stereo/right.jpg` (camera moved exactly 10 cm right, no rotation). The runner uses the bundled `pose.example.json` directly, so no pose-file setup is necessary.
+
+Run this first to produce stereo geometry and a PyCOLMAP-validated dataset **without running CUDA training**:
+
+```powershell
+python workflows/known-intrinsics-known-poses/run_binocular.py --left data/stereo/left.jpg --right data/stereo/right.jpg --calibration calibration/olympus_intrinsics.json --output output/binocular_test1 --geometry-only
+```
+
+Inspect `output/binocular_test1/stereo/disparity.png`, `rectified_left.png`, `rectified_right.png` and `points.ply`.
+
+Then use a **new output path** to attempt the full Gaussian reconstruction:
+
+```powershell
+python workflows/known-intrinsics-known-poses/run_binocular.py --left data/stereo/left.jpg --right data/stereo/right.jpg --calibration calibration/olympus_intrinsics.json --output output/binocular_test2 --steps 1000
+```
+
+The runner verifies that the inputs exist, runs stereo, exports the COLMAP model, patches the gsplat v1.5.3 example, trains with both images and lets `run.py` locate the Gaussian PLY. Keep output paths unique: the runner intentionally refuses to reuse an existing sparse-model folder.
+
+**Important:** This path bypasses COLMAP's initial-pair search, but stereo still needs textured surfaces, accurate intrinsics and accurate camera translation/orientation. A successful point cloud does not guarantee gsplat optimisation will run or produce a good scene. Read the stages below to debug each part.
 
 ## Stage 1: OpenCV stereo geometry
 
