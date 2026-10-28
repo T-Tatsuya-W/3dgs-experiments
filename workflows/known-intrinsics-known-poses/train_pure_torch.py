@@ -22,11 +22,13 @@ def read_colmap(folder, limit, width):
     sparse = folder / "sparse" / "0"
     cams = {}
     for line in (sparse / "cameras.txt").read_text().splitlines():
-        if not line or line.startswith("#"):
+        if line.strip() and not line.lstrip().startswith("#"):
             c = line.split()
             if len(c) < 8 or c[1] != "PINHOLE":
                 raise ValueError("This experiment requires rectified PINHOLE cameras")
             cams[int(c[0])] = tuple(map(float, c[2:8]))
+    if not cams:
+        raise ValueError(f"No PINHOLE cameras found in {sparse / 'cameras.txt'}")
     raw = [x.strip() for x in (sparse / "images.txt").read_text().splitlines()
            if x.strip() and not x.startswith("#")]
     views = []
