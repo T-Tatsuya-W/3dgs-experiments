@@ -7,6 +7,8 @@ repository deliberately does not vendor or reimplement either project.
 from __future__ import annotations
 
 import argparse
+import json
+import math
 import shutil
 import subprocess
 import sys
@@ -29,7 +31,23 @@ def check_images(images: Path) -> None:
     print(f"Found {count} image(s) in {images}.", flush=True)
 
 
-def reconstruct(images: Path, dataset: Path) -> None:
+def load_calibration(path: Path, image_size: tuple[int, int]) -> str:
+    """Convert OpenCV calibration JSON to COLMAP's 8-parameter OPENCV model."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    expected = (int(data["image_width"]), int(data["image_height"]))
+    if expected != image_size:
+        raise ValueError(f"Calibration resolution {expected} differs from image {image_size}")
+    K = data["camera_matrix"]
+    dist = data["distortion_coefficients"]
+    if len(dist) < 4 or (len(dist) > 5 and any(abs(float(v)) > 1e-9 for v in dist[5:])):
+        raise ValueError("Expected 4/5 coefficient OpenCV distortion without nonzero higher coefficients")
+    vals = [K[0][0], K[1][1], K[0][2], K[1][2], *dist[:4]]
+    if not all(math.isfinite(float(v)) for v in vals) or vals[0] <= 0 or vals[1] <= 0:
+        raise ValueError("Invalid calibration parameters")
+    return ",".join(str(float(v)) for v in vals)
+
+
+def reconstruct(images: Path, dataset: Path, calibration: Path | None = None) -> None:
     """Create a conventional COLMAP dataset: images/, sparse/0/, database.db."""
     try:
         import pycolmap
@@ -58,6 +76,22 @@ def reconstruct(images: Path, dataset: Path) -> None:
     print("Extracting features with PyCOLMAP (CPU)...", flush=True)
     reader = pycolmap.ImageReaderOptions()
     reader.camera_model = "SIMPLE_RADIAL"
+    mapping_options = None
+    if calibration is not None:
+        from PIL import Image
+        first_image = next(p for p in sorted(destination.iterdir()) if p.suffix.lower() in IMAGE_EXTENSIONS)
+        with Image.open(first_image) as im:
+            size = im.size
+        params = load_calibration(calibration, size)
+        reader.camera_model = "OPENCV"
+        reader.camera_params = params
+        mapping_options = pycolmap.IncrementalPipelineOptions()
+        mapping_options.ba_refine_focal_length = False
+        mapping_options.ba_refine_principal_point = False
+        mapping_options.ba_refine_extra_params = False
+        mapping_options.mapper.abs_pose_refine_focal_length = False
+        mapping_options.mapper.abs_pose_refine_extra_params = False
+        print(f"Fixed calibrated OPENCV camera: {params}", flush=True)
     pycolmap.extract_features(
         database_path=database,
         image_path=destination,
@@ -68,11 +102,10 @@ def reconstruct(images: Path, dataset: Path) -> None:
     print("Matching image features with PyCOLMAP (CPU)...", flush=True)
     pycolmap.match_exhaustive(database_path=database, device=pycolmap.Device.cpu)
     print("Estimating camera poses with PyCOLMAP...", flush=True)
-    reconstructions = pycolmap.incremental_mapping(
-        database_path=database,
-        image_path=destination,
-        output_path=sparse,
-    )
+    mapping_kwargs = dict(database_path=database, image_path=destination, output_path=sparse)
+    if mapping_options is not None:
+        mapping_kwargs["options"] = mapping_options
+    reconstructions = pycolmap.incremental_mapping(**mapping_kwargs)
     if not reconstructions:
         raise RuntimeError("PyCOLMAP returned no reconstruction. Try more overlapping, textured photos.")
 
@@ -128,6 +161,7 @@ def train(dataset: Path, output: Path, *, gsplat_examples: Path, steps: int, fac
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--images", type=Path, default=Path("data/test01/images"))
+    parser.add_argument("--calibration", type=Path, help="Calibrated intrinsics JSON from ChArUco")
     parser.add_argument("--output", type=Path, default=Path("output/test01"))
     parser.add_argument("--gsplat-examples", type=Path, default=Path("third_party/gsplat/examples"))
     parser.add_argument("--steps", type=int, default=3000)
@@ -146,7 +180,7 @@ def main() -> int:
     try:
         if not args.skip_colmap:
             check_images(images)
-            reconstruct(images, dataset)
+            reconstruct(images, dataset, args.calibration.expanduser().resolve() if args.calibration else None)
         if not args.colmap_only:
             train(dataset, output / "training", gsplat_examples=examples,
                   steps=args.steps, factor=args.factor)
