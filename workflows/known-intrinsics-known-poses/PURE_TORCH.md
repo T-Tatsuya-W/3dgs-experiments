@@ -1,3 +1,90 @@
+# One-command binocular → binary Gaussian PLY (GTX 1060)
+
+This is the recommended *experimental* two-photo pipeline on a Pascal GTX 1060. It does not use the incompatible gsplat custom CUDA extension.
+
+## Inputs
+
+From repository root:
+
+```text
+data/stereo/
+  left.jpg       # first image, optical centre at origin
+  right.jpg      # second image, exactly 10 cm to the right, no rotation
+calibration/
+  olympus_intrinsics.json  # ChArUco intrinsics, matching photo resolution/lens
+```
+
+The subject must be static, well textured, and visible in both frames. The camera's **optical centre**, not necessarily tripod mount, needs to translate 10 cm. Relative rotations are assumed zero.
+
+## Setup (once)
+
+Have the original `.venv` available for OpenCV/PyCOLMAP/Scipy geometry and `.venv-puregs` for CUDA PyTorch training. The runner invokes **both interpreters explicitly**; activate neither or either in PowerShell. In `.venv-puregs` install `plyfile` for binary PLY output:
+
+```powershell
+.\.venv-puregs\Scripts\python.exe -m pip install plyfile
+```
+
+## One command
+
+From project root, with the pair and calibration in the locations above:
+
+```powershell
+python workflows/known-intrinsics-known-poses/run_pure_binocular.py --output output/my_first_pair --steps 1000
+```
+
+This does:
+1. Rectified OpenCV stereo and disparity -> `stereo/points.ply` (ordinary RGB point cloud)
+2. PyCOLMAP-validated sparse camera/point dataset -> `dataset/`
+3. Pure PyTorch optimisation using **both photos** -> `training/render_1.png`, `render_2.png`, and **binary Gaussian** `training/gaussians.ply`
+
+Open the final *binary* Gaussian file in [SuperSplat](https://superspl.at/editor). The source image output and disparity previews help diagnose quality. **Use a new --output directory for each experiment**; the runner refuses to replace an occupied directory.
+
+## Different pairs and settings
+
+To keep many pairs, place them in `data/pairs/plant01/left.jpg` and `right.jpg`, then:
+
+```powershell
+python workflows/known-intrinsics-known-poses/run_pure_binocular.py --pair-dir data/pairs/plant01 --output output/plant01 --steps 1000
+```
+
+For filenames other than `left.jpg` and `right.jpg` use `--left PATH --right PATH`. Set a different calibration with `--calibration PATH`.
+
+Start with `--geometry-only` to assess disparity and the point cloud without GPU training. The key tuning flags:
+
+| Flag | Default | Effect |
+| --- | --- | --- |
+| `--baseline-m` | `0.10` | Measured camera-right translation in metres; zero rotation assumed |
+| `--stereo-width` | `1200` | Downsample width for stereo matching |
+| `--disparities` | `128` | Stereo search range, multiple of 16 |
+| `--block-size` | `5` | StereoSGBM block size (odd >=3) |
+| `--max-stereo-points` | `12000` | Number of COLMAP initial points retained |
+| `--train-width` | `240` | Width for training both photos |
+| `--gaussians` | `500` | Initial Gaussians, sampled from stereo point cloud |
+| `--steps` | `1000` | Optimisation iterations |
+| `--lr` | `0.002` | Adam learning rate |
+
+For 6 GB GPU memory issues, try `--gaussians 200 --train-width 160`. More steps alone may not improve results: the baseline has fixed small footprints and does not implement proper depth-sorted visibility. It outputs 3D Gaussian attributes, not photorealistic multi-view reconstruction.
+
+If using non-default environments, pass `--python-geometry PATH` and `--python-training PATH`.
+
+## Existing results / manual conversion
+
+The *updated* `train_pure_torch.py` writes little-endian binary PLY directly; no post-processing required. Older ASCII `gaussians.ply` files can be converted without retraining:
+
+```powershell
+@'
+from plyfile import PlyData
+p = PlyData.read("output/puregs_test1/gaussians.ply")
+p.text = False
+p.byte_order = "<"
+p.write("output/puregs_test1/gaussians_binary.ply")
+'@ | .\.venv-puregs\Scripts\python.exe
+```
+
+These are experimental scripts and have **not** been verified end-to-end with a newly captured pair after the new runner change. Inspect the Gaussian previews and the import result rather than treating a generated PLY as proof of reconstruction quality.
+
+---
+
 # Pure-PyTorch binocular Gaussian experiment (GTX 1060 / sm_61)
 
 This experiment uses the **existing calibrated two-photo COLMAP dataset** and directly optimises a few hundred 3D Gaussians with ordinary PyTorch CUDA ops. No custom CUDA extension, gsplat wheel, GLM or Visual Studio compiler is required for this stage.
