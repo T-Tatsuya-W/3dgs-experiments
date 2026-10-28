@@ -1,6 +1,69 @@
 # Two-photo stereo → experimental Gaussian splat
 
-**Status:** Experimental and **not yet tested end-to-end on the Olympus photographs**. The stereo, COLMAP exporter and two-view trainer patch are present on `main`. This PR adds a one-command runner. Camera 1 is the world origin; camera 2 is assumed **10 cm to its right with exactly parallel orientation**. If your actual capture deviates from this, geometry may be incorrect.
+## Quick start — current GTX 1060 pure-PyTorch workflow
+
+Run these commands in **PowerShell**, from the project root. The launcher calls the geometry `.venv` and training `.venv-puregs` interpreters separately, so activating `.venv-puregs` is convenient but not required for the launcher.
+
+```powershell
+cd "C:\Users\Toby T Watkinson\3dgs\3dgs-experiments"
+git switch main
+git pull origin main
+.\.venv-puregs\Scripts\Activate.ps1
+python -m pip install plyfile
+```
+
+Place a pair of photos at:
+
+```text
+data/pairs/desk01/left.jpg     # photo 1: camera at origin
+data/pairs/desk01/right.jpg    # photo 2: camera moved exactly 10 cm right, no rotation
+calibration/olympus_intrinsics.json
+```
+
+Use the **same lens, focal length, focus and image resolution** as calibration. The subject must remain stationary.
+
+**Single command, from photos to binary Gaussian PLY:**
+
+```powershell
+python workflows/known-intrinsics-known-poses/run_pure_binocular.py --pair-dir data/pairs/desk01 --output output/desk01 --steps 1000
+```
+
+Final result: `output/desk01/training/gaussians.ply` (binary Gaussian splat). Also inspect `output/desk01/stereo/disparity.png`, `stereo/points.ply` (ordinary point cloud), and `training/render_1.png` / `render_2.png`.
+
+**Geometry-only diagnostic:**
+
+```powershell
+python workflows/known-intrinsics-known-poses/run_pure_binocular.py --pair-dir data/pairs/desk01 --output output/desk01_geometry --geometry-only
+```
+
+**More detailed experiment (new output directory):**
+
+```powershell
+python workflows/known-intrinsics-known-poses/run_pure_binocular.py --pair-dir data/pairs/desk01 --output output/desk01_high --baseline-m 0.10 --stereo-width 1200 --disparities 128 --block-size 5 --max-stereo-points 12000 --train-width 400 --gaussians 2000 --steps 2000 --lr 0.002
+```
+
+| Flag | Default | Meaning |
+|---|---:|---|
+| `--pair-dir` | `data/stereo` | Folder containing `left.jpg` and `right.jpg` |
+| `--left`, `--right` | From pair-dir | Overrides for other filenames |
+| `--calibration` | `calibration/olympus_intrinsics.json` | Intrinsics JSON path |
+| `--output` | `output/pure_binocular` | **Must be empty/new** for each run |
+| `--baseline-m` | `0.10` | Actual camera-right translation, metres; no rotation |
+| `--stereo-width` | `1200` | Stereo-matching resolution |
+| `--disparities` | `128` | Disparity search range, multiple of 16 |
+| `--block-size` | `5` | StereoSGBM matching window, odd >=3 |
+| `--max-stereo-points` | `12000` | Initial geometry sampled for COLMAP export |
+| `--train-width` | `240` | Training image width |
+| `--gaussians` | `500` | Initial trainable Gaussians |
+| `--steps` | `1000` | Optimisation iterations |
+| `--lr` | `0.002` | Adam learning rate |
+| `--geometry-only` | Off | Skip training and inspect stereo output |
+
+**If video memory is tight**, try `--train-width 160 --gaussians 200`. Higher point counts and more steps will not necessarily produce a good reconstruction: the current PyTorch renderer is simplified and doesn't do depth-sorted Gaussian alpha compositing. A cone or wedge in the splat viewer can be a geometry/pose or renderer limitation. Check disparity and the ordinary point cloud first.
+
+Full notes and old ASCII-to-binary conversion: [PURE_TORCH.md](PURE_TORCH.md).
+
+---
 
 ## Capture and environment
 
