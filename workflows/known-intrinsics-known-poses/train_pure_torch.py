@@ -55,8 +55,8 @@ def read_colmap(folder, limit, width):
                           K=(fx*sx, fy*sy, cx*sx, cy*sy),
                           target=torch.from_numpy(np.asarray(img, dtype=np.float32).copy() / 255),
                           w=target_w, h=target_h))
-    if len(views) != 2:
-        raise ValueError(f"Expected exactly two images, got {len(views)}")
+    if len(views) not in (2, 4):
+        raise ValueError(f"Expected 2 or 4 images, got {len(views)}")
     xyz, rgb = [], []
     for line in (sparse / "points3D.txt").read_text().splitlines():
         if line and not line.startswith("#"):
